@@ -1,35 +1,70 @@
+import logging
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import JSONResponse
-import logging
 from token_refresher import TokenRefresher
+from ws_keepalive import init_ws_keepalive
 
-app = FastAPI()
-logging.basicConfig(level=logging.INFO)
+_LOGGER = logging.getLogger("uvicorn.error")  # Use Uvicorn's logger
 
-@app.get("/token")
-async def get_token(username: str = Query(...), password: str = Query(...)):
-    refresher = TokenRefresher(
-        username=username,
-        password=password
+app = FastAPI()                   # Create FastAPI app
+init_ws_keepalive(app)            # Initialize WebSocket keep-alive
+
+app.state.ugreen_username = None  # Central in-memory states
+app.state.ugreen_password = None  # (read by other components)
+app.state.ugreen_token = None
+
+
+# Passive endpoint for HA: remotely update username / password / token.
+@app.get("/creds")
+async def set_creds(
+    username: str = Query(None),
+    password: str = Query(None),
+    token: str = Query(None),
+):
+    if username is not None:
+        app.state.ugreen_username = username
+    if password is not None:
+        app.state.ugreen_password = password
+    if token is not None:
+        app.state.ugreen_token = token
+    _LOGGER.debug(
+        "Credentials updated via /creds (username=%s).",
+        app.state.ugreen_username,
+    )
+    return JSONResponse(
+        status_code=200,
+        content={"code": 200, "msg": "success", "data": None},
     )
 
+
+# Active endpoint for HA: fetch a fresh token, store it & return it.
+@app.get("/token")
+async def get_token(
+    username: str = Query(None),
+    password: str = Query(None),
+):
+    if username is not None:
+        app.state.ugreen_username = username
+    if password is not None:
+        app.state.ugreen_password = password
+
+    refresher = TokenRefresher(
+        username=app.state.ugreen_username,
+        password=app.state.ugreen_password,
+    )
     success = await refresher.fetch_token_async()
-    if success:
-        return JSONResponse(
-            status_code=200,
-            content={
-                "code": 200,
-                "msg": "success",
-                "data": {
-                    "token": refresher.token
-                }
-            }
-        )
-    else:
+    if not success:
         raise HTTPException(
             status_code=401,
-            detail={ # type: ignore
-                "code": 401,
-                "msg": "Token refresh failed",
-            }
+            detail={"code": 401, "msg": "Token refresh failed"},
         )
+
+    app.state.ugreen_token = refresher.token
+    _LOGGER.info(
+        "Central token updated; keep-alive will adopt it on next (re)connect."
+    )
+
+    return JSONResponse(
+        status_code=200,
+        content={"code": 200, "msg": "success", "data": {"token": refresher.token}},
+    )
