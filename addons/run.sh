@@ -8,16 +8,16 @@ LOG_LEVEL=${LOG_LEVEL:-info}
 export TZ="${TZ:-Europe/Berlin}"
 
 if [[ -z "$UGREEN_NAS_API_SCHEME" ]]; then
-  printf "%s | INFO | --- Starting up with config.json. ---\n" "$(date +'%m.%d %H:%M:%S')"
+  printf "%s | --- Starting up with config.json. ---\n" "$(date +'%m.%d %H:%M:%S')"
   export UGREEN_NAS_API_SCHEME="$(jq -r '.options.UGREEN_NAS_API_SCHEME' "$CONFIG_FILE")"
   export UGREEN_NAS_API_IP="$(jq -r '.options.UGREEN_NAS_API_IP' "$CONFIG_FILE")"
   export UGREEN_NAS_API_PORT="$(jq -r '.options.UGREEN_NAS_API_PORT' "$CONFIG_FILE")"
   export UGREEN_NAS_API_VERIFY_SSL="$(jq -r '.options.UGREEN_NAS_API_VERIFY_SSL' "$CONFIG_FILE")"
 else
-  printf "%s | INFO | --- Starting up with docker-compose. ---\n" "$(date +'%m.%d %H:%M:%S')"
+  printf "%s | --- Starting up with docker-compose. ---\n" "$(date +'%m.%d %H:%M:%S')"
 fi
 
-printf "%s | INFO | Settings: %s://%s:%s verify_ssl=%s\n" \
+printf "%s | Settings: %s://%s:%s verify_ssl=%s\n" \
   "$(date +'%m.%d %H:%M:%S')" \
   "${UGREEN_NAS_API_SCHEME}" \
   "${UGREEN_NAS_API_IP:-<auto>}" \
