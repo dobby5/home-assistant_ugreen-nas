@@ -3,7 +3,7 @@ disable_existing_loggers: false
 
 formatters:
   unified:
-    format: "%(asctime)s | %(levelname)s | %(message)s"
+    format: "%(asctime)s | %(message)s"
     datefmt: "%m.%d %H:%M:%S"
     class: logging.Formatter
 
