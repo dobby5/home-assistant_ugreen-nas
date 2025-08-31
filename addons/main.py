@@ -15,7 +15,7 @@ app.state.ugreen_token = None
 
 
 # Passive endpoint for HA: remotely update username / password / token.
-@app.get("/creds")
+@app.get("/credentials")
 async def set_creds(
     username: str = Query(None),
     password: str = Query(None),
@@ -27,10 +27,14 @@ async def set_creds(
         app.state.ugreen_password = password
     if token is not None:
         app.state.ugreen_token = token
-    _LOGGER.debug(
-        "Credentials updated via /creds (username=%s).",
-        app.state.ugreen_username,
-    )
+
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        _LOGGER.debug(
+            f"Credentials updated: (username={app.state.ugreen_username}, "
+            f"password={app.state.ugreen_password}, "
+            f"token={app.state.ugreen_token})."
+        )
+
     return JSONResponse(
         status_code=200,
         content={"code": 200, "msg": "success", "data": None},
