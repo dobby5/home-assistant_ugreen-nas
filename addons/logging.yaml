@@ -1,0 +1,32 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  unified:
+    format: "%(asctime)s | %(levelname)s | %(message)s"
+    datefmt: "%m.%d %H:%M:%S"
+    class: logging.Formatter
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    stream: ext://sys.stdout
+    formatter: unified
+
+loggers:
+  uvicorn:
+    level: INFO
+    handlers: [console]
+    propagate: no
+  uvicorn.error:
+    level: INFO
+    handlers: [console]
+    propagate: no
+  uvicorn.access:
+    level: WARNING
+    handlers: []   # no handler attached - set to console to see "GET /..." lines with credentials again
+    propagate: no
+
+root:
+  level: INFO
+  handlers: [console]
