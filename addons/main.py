@@ -43,6 +43,13 @@ async def get_token(
     username: str = Query(None),
     password: str = Query(None),
 ):
+
+    # INFO shows username only; DEBUG also includes password
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        _LOGGER.debug("Received token request (username=%s, password=%s)", username, password)
+    else:
+        _LOGGER.info("Received token request (username=%s)", username)
+
     if username is not None:
         app.state.ugreen_username = username
     if password is not None:
@@ -60,9 +67,11 @@ async def get_token(
         )
 
     app.state.ugreen_token = refresher.token
-    _LOGGER.info(
-        "Central token updated; keep-alive will adopt it on next (re)connect."
-    )
+    
+    if _LOGGER.isEnabledFor(logging.DEBUG):
+        _LOGGER.debug("Token is %s - keep-alive adopting it soon.", app.state.ugreen_token)
+    else:
+        _LOGGER.info("Token successfully refreshed, returning it to HA.")
 
     return JSONResponse(
         status_code=200,
