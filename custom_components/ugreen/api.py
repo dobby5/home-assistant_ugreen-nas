@@ -552,6 +552,7 @@ class UgreenApiClient:
                     return False
 
                 self.token = token
+                await self._push_credentials_to_proxy(session)
                 _LOGGER.info("[UGREEN NAS] Token received and stored")
                 return True
 
@@ -560,8 +561,27 @@ class UgreenApiClient:
             return False
 
 
+    async def _push_credentials_to_proxy(self, session) -> None:
+        """Send username/password (+ token if available) to the container at most every 60s."""
+        try:
+            now = asyncio.get_running_loop().time()
+            if now - getattr(self, "_last_creds_push", 0.0) < 60:
+                return
+
+            params = {"username": self.username, "password": self.password}
+            if self.token:
+                params["token"] = self.token
+            # fire-and-forget; we don't care about the body
+            await session.get(f"{self.token_url}/credentials", params=params, ssl=self.verify_ssl, timeout=10)
+            self._last_creds_push = now
+        except Exception as exc:
+            _LOGGER.info("Push credentials to proxy /creds failed: %s", exc)
+            return
+
+
     async def get(self, session: aiohttp.ClientSession, endpoint: str) -> dict[str, Any]:
         """Perform GET with retry on token expiration (code 1024)."""
+        await self._push_credentials_to_proxy(session)
         async def _do_get() -> dict[str, Any]:
             url = f"{self.base_url}{endpoint}"
             delimiter = "&" if "?" in url else "?"
@@ -593,6 +613,7 @@ class UgreenApiClient:
 
     async def post(self, session: aiohttp.ClientSession, endpoint: str, payload: dict[str, Any] = {}) -> dict[str, Any]:
         """Perform POST request (formerly GET) with optional payload and retry on token expiration (code 1024)."""
+        await self._push_credentials_to_proxy(session)
         async def _do_post() -> dict[str, Any]:
             url = f"{self.base_url}{endpoint}"
             delimiter = "&" if "?" in url else "?"
