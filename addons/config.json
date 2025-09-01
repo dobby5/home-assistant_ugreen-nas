@@ -20,12 +20,16 @@
     "UGREEN_NAS_API_SCHEME": "https",
     "UGREEN_NAS_API_IP": "",
     "UGREEN_NAS_API_PORT": "9443",
-    "UGREEN_NAS_API_VERIFY_SSL": "false"
+    "UGREEN_NAS_API_VERIFY_SSL": "false",
+    "LOG_LEVEL": "info",
+    "TZ": "Europe/Berlin"
   },
   "schema": {
     "UGREEN_NAS_API_SCHEME": "str",
     "UGREEN_NAS_API_IP": "str",
     "UGREEN_NAS_API_PORT": "str",
-    "UGREEN_NAS_API_VERIFY_SSL": "str"
+    "UGREEN_NAS_API_VERIFY_SSL": "str",
+    "LOG_LEVEL": "str",
+    "TZ": "str"
   }
 }
