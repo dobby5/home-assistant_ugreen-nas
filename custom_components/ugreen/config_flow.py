@@ -2,18 +2,14 @@ import logging
 import aiohttp
 import voluptuous as vol
 from typing import Any
-
 from homeassistant import config_entries
-
 from .const import (
     DOMAIN,
     CONF_UGREEN_HOST,
     CONF_UGREEN_PORT,
-    CONF_AUTH_PORT,
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_USE_HTTPS,
-    CONF_VERIFY_SSL,
 )
 from .api import UgreenApiClient
 
@@ -37,11 +33,9 @@ class UgreenNasConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 api = UgreenApiClient(
                     ugreen_nas_host=user_input[CONF_UGREEN_HOST],
                     ugreen_nas_port=int(user_input[CONF_UGREEN_PORT]),
-                    auth_port=int(user_input[CONF_AUTH_PORT]),
                     username=user_input[CONF_USERNAME],
                     password=user_input[CONF_PASSWORD],
                     use_https=user_input.get(CONF_USE_HTTPS, False),
-                    verify_ssl=user_input.get(CONF_VERIFY_SSL, False),
                 )
 
                 async with aiohttp.ClientSession() as session:
@@ -53,11 +47,9 @@ class UgreenNasConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         return self.async_create_entry(title="UGREEN NAS", data={
                             CONF_UGREEN_HOST: user_input[CONF_UGREEN_HOST],
                             CONF_UGREEN_PORT: user_input[CONF_UGREEN_PORT],
-                            CONF_AUTH_PORT: user_input[CONF_AUTH_PORT],
                             CONF_USERNAME: user_input[CONF_USERNAME],
                             CONF_PASSWORD: user_input[CONF_PASSWORD],
                             CONF_USE_HTTPS: user_input.get(CONF_USE_HTTPS, False),
-                            CONF_VERIFY_SSL: user_input.get(CONF_VERIFY_SSL, False),
                         })
 
             except Exception as e:
@@ -69,11 +61,9 @@ class UgreenNasConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required(CONF_UGREEN_HOST): str,
                 vol.Required(CONF_UGREEN_PORT, default=9999): int,
-                vol.Required(CONF_AUTH_PORT, default=4115): int,
                 vol.Required(CONF_USERNAME): str,
                 vol.Required(CONF_PASSWORD): str,
                 vol.Optional(CONF_USE_HTTPS, default=False): bool,
-                vol.Optional(CONF_VERIFY_SSL, default=False): bool,
             }),
             errors=errors,
         )
@@ -100,10 +90,8 @@ class UgreenNasOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema({
                 vol.Optional(CONF_UGREEN_HOST, default=current.get(CONF_UGREEN_HOST, "")): str,
                 vol.Optional(CONF_UGREEN_PORT, default=current.get(CONF_UGREEN_PORT, 9999)): int,
-                vol.Optional(CONF_AUTH_PORT, default=current.get(CONF_AUTH_PORT, 4115)): int,
                 vol.Optional(CONF_USERNAME, default=current.get(CONF_USERNAME, "")): str,
                 vol.Optional(CONF_PASSWORD, default=current.get(CONF_PASSWORD, "")): str,
                 vol.Optional(CONF_USE_HTTPS, default=current.get(CONF_USE_HTTPS, False)): bool,
-                vol.Optional(CONF_VERIFY_SSL, default=current.get(CONF_VERIFY_SSL, False)): bool,
             }),
         )
