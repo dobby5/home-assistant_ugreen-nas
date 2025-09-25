@@ -7,11 +7,9 @@
         "data": {
           "ugreen_host": "Host",
           "ugreen_port": "Port",
-          "auth_port": "Token-Port",
           "username": "Benutzername",
           "password": "Passwort",
-          "use_https": "HTTPS verwenden",
-          "verify_ssl": "SSL-Zertifikat überprüfen"
+          "use_https": "HTTPS verwenden"
         }
       }
     },
@@ -28,11 +26,9 @@
         "data": {
           "ugreen_host": "Host",
           "ugreen_port": "Port",
-          "auth_port": "Token-Port",
           "username": "Benutzername",
           "password": "Passwort",
-          "use_https": "HTTPS verwenden",
-          "verify_ssl": "SSL-Zertifikat überprüfen"
+          "use_https": "HTTPS verwenden"
         }
       }
     }
