@@ -1,6 +1,9 @@
-import logging, aiohttp, async_timeout, asyncio
+import logging, time, aiohttp, async_timeout, asyncio, base64, contextlib
 from dataclasses import dataclass
 from typing import List, Any
+from uuid import uuid4
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 from homeassistant.helpers.entity import EntityDescription
 from homeassistant.const import (
     PERCENTAGE, REVOLUTIONS_PER_MINUTE, UnitOfDataRate, UnitOfTemperature,
@@ -506,144 +509,149 @@ STATIC_BUTTON_ENTITIES: List[UgreenEntity] = [
 ]
 
 class UgreenApiClient:
+
     def __init__(
         self,
         ugreen_nas_host: str,
         ugreen_nas_port: int,
-        auth_port: int,
         username: str = "",
         password: str = "",
         token: str = "",
         use_https: bool = False,
-        verify_ssl: bool = True,
+        otp: bool = False,
     ):
-        protocol = "https" if use_https else "http"
-        self.base_url = f"{protocol}://{ugreen_nas_host}:{ugreen_nas_port}"
-        self.token_url = f"http://{ugreen_nas_host}:{auth_port}"
+
+        # Derived connection attributes for HTTP/WS usage
+        self.scheme = "https" if use_https else "http"
+        self.host = ugreen_nas_host
+        self.port = int(ugreen_nas_port)
+        self.base_url = f"{self.scheme}://{self.host}:{self.port}"
+
+        # Credentials & connection
         self.username = username
         self.password = password
         self.token = token
-        self.verify_ssl = verify_ssl
-        self._dynamic_entity_counts = None
+        self.otp = otp
+
+        # Auth state
+        self._login_lock = asyncio.Lock()
+        self._authed = bool(token)
+
+        # 🔹 Dynamic entity caches (used in count_* & get_dynamic_*)
+        self._dynamic_entity_counts: dict[str, Any] | None = None
         self._dynamic_entity_counts_lock = asyncio.Lock()
 
+    async def authenticate(self, session) -> bool:
+        """Call once during setup; afterwards rely on on-demand login in _request()"""
+        if self._authed:
+            return True
+        ok = await self.login(session)
+        self._authed = ok
+        return ok
 
-    ################################################ CORE API FUNCTIONS ########
+    async def login(self, session) -> bool:
+        """Fetch RSA pubkey from header, encrypt password, request token"""
+        async with self._login_lock:
+            try:
+                # 1) public key
+                url_pk = f"{self.base_url}/ugreen/v1/verify/check?token="
+                payload_pk = {"username": self.username}
+                _LOGGER.debug("[UGREEN] login: fetch public key")
+                async with async_timeout.timeout(10):
+                    async with session.post(url_pk, json=payload_pk) as resp:
+                        resp.raise_for_status()
+                        hdr = resp.headers.get("x-rsa-token", "")
+                if not hdr:
+                    _LOGGER.debug("[UGREEN] login: missing x-rsa-token header")
+                    return False
+                try:
+                    pub_bytes = base64.b64decode(hdr)
+                except Exception:
+                    pub_bytes = hdr.encode("utf-8")
 
+                # 2) encrypt password (PKCS#1 v1.5) and login
+                try:
+                    pub = serialization.load_der_public_key(pub_bytes)
+                except Exception:
+                    pub = serialization.load_pem_public_key(pub_bytes)
+                enc = base64.b64encode(pub.encrypt(self.password.encode("utf-8"), padding.PKCS1v15())).decode("ascii")
 
-    async def authenticate(self, session: aiohttp.ClientSession) -> bool:
-        """Login and fetch new token."""
-        url = f"{self.token_url}/token?username={self.username}&password={self.password}"
-        
-        _LOGGER.debug("[UGREEN NAS] Sending authentication GET to: %s", url)
-        try:
-            async with session.get(url, ssl=self.verify_ssl) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                _LOGGER.debug("[UGREEN NAS] Authentication response: %s", data)
+                url_login = f"{self.base_url}/ugreen/v1/verify/login"
+                payload = {
+                    "is_simple": True,
+                    "keepalive": True,
+                    "otp": bool(self.otp),
+                    "username": self.username,
+                    "password": enc,
+                }
+                _LOGGER.debug("[UGREEN] login POST (otp=%s)", self.otp)
+                async with async_timeout.timeout(10):
+                    async with session.post(url_login, json=payload) as resp:
+                        resp.raise_for_status()
+                        data = await resp.json()
 
                 if data.get("code") != 200:
-                    _LOGGER.warning("[UGREEN NAS] Authentication failed with code: %s", data.get("code"))
+                    msg = data.get("msg") or data.get("debug") or ""
+                    _LOGGER.error("[UGREEN] login failed code=%s msg=%s", data.get("code"), msg)
                     return False
 
-                token = data.get("data", {}).get("token")
+                token = (data.get("data") or {}).get("token")
                 if not token:
-                    _LOGGER.error("[UGREEN NAS] Login succeeded but token not found in response")
+                    _LOGGER.error("[UGREEN] login ok but token missing")
                     return False
 
                 self.token = token
-                await self._push_credentials_to_proxy(session)
-                _LOGGER.info("[UGREEN NAS] Token received and stored")
+                self._authed = True
+                _LOGGER.debug("[UGREEN] token stored")
                 return True
 
-        except Exception as e:
-            _LOGGER.exception("[UGREEN NAS] Authentication request failed: %s", e)
-            return False
+            except Exception as e:
+                _LOGGER.error("[UGREEN] login error: %s", e)
+                return False
 
+    async def _request(self, session, method: str, endpoint: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Single request helper with 1024-refresh; keeps noise low"""
+        payload = payload or {}
 
-    async def _push_credentials_to_proxy(self, session) -> None:
-        """Send username/password (+ token if available) to the container at most every 60s."""
-        try:
-            now = asyncio.get_running_loop().time()
-            if now - getattr(self, "_last_creds_push", 0.0) < 60:
-                return
-
-            params = {"username": self.username, "password": self.password}
-            if self.token:
-                params["token"] = self.token
-            # fire-and-forget; we don't care about the body
-            await session.get(f"{self.token_url}/credentials", params=params, ssl=self.verify_ssl, timeout=10)
-            self._last_creds_push = now
-        except Exception as exc:
-            _LOGGER.info("Push credentials to proxy /creds failed: %s", exc)
-            return
-
-
-    async def get(self, session: aiohttp.ClientSession, endpoint: str) -> dict[str, Any]:
-        """Perform GET with retry on token expiration (code 1024)."""
-        await self._push_credentials_to_proxy(session)
-        async def _do_get() -> dict[str, Any]:
+        async def _do() -> dict[str, Any]:
             url = f"{self.base_url}{endpoint}"
-            delimiter = "&" if "?" in url else "?"
-            url += f"{delimiter}token={self.token}"
-            _LOGGER.debug("[UGREEN NAS] Sending GET request to: %s", url)
-
-            # uncomment this to see each 5s/60s API call in the log:
-            # _LOGGER.error("[UGREEN API] Calling endpoint: %s", endpoint)
-
+            url = f"{url}{'&' if '?' in url else '?'}token={self.token}"
+            _LOGGER.debug("[UGREEN] %s %s payload=%s", method, url, payload if method == "POST" else None)
             async with async_timeout.timeout(10):
-                async with session.get(url, ssl=self.verify_ssl) as resp:
+                async with session.request(method, url, json=payload if method == "POST" else None) as resp:
                     resp.raise_for_status()
-                    data = await resp.json()
-                    return data
+                    return await resp.json()
+
         try:
-            data = await _do_get()
+            if not self.token and not await self.login(session):
+                _LOGGER.error("[UGREEN] %s: no token and login failed", method)
+                return {}
+
+            data = await _do()
             if data.get("code") == 1024:
-                _LOGGER.warning("[UGREEN NAS] Token expired (code 1024), refreshing...")
-                if await self.authenticate(session):
-                    data = await _do_get()
+                _LOGGER.error("[UGREEN] token expired (1024) -> relogin")
+                if await self.login(session):
+                    data = await _do()
                 else:
-                    _LOGGER.error("[UGREEN NAS] Token refresh failed")
+                    _LOGGER.error("[UGREEN] relogin failed")
                     return {}
             return data
         except Exception as e:
-            _LOGGER.error("[UGREEN NAS] GET request to %s failed: %s", endpoint, e)
+            _LOGGER.error("[UGREEN] %s error on %s: %s", method, endpoint, e)
             return {}
 
+    async def get(self, session, endpoint: str) -> dict[str, Any]:
+        return await self._request(session, "GET", endpoint)
 
-    async def post(self, session: aiohttp.ClientSession, endpoint: str, payload: dict[str, Any] = {}) -> dict[str, Any]:
-        """Perform POST request (formerly GET) with optional payload and retry on token expiration (code 1024)."""
-        await self._push_credentials_to_proxy(session)
-        async def _do_post() -> dict[str, Any]:
-            url = f"{self.base_url}{endpoint}"
-            delimiter = "&" if "?" in url else "?"
-            url += f"{delimiter}token={self.token}"
-            _LOGGER.debug("[UGREEN NAS] Sending POST request to: %s with payload: %s", url, payload)
-            async with async_timeout.timeout(10):
-                async with session.post(url, json=payload, ssl=self.verify_ssl) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    return data
-        try:
-            data = await _do_post()
-            if data.get("code") == 1024:
-                _LOGGER.warning("[UGREEN NAS] Token expired (code 1024), refreshing...")
-                if await self.authenticate(session):
-                    data = await _do_post()
-                else:
-                    _LOGGER.error("[UGREEN NAS] Token refresh failed during POST")
-                    return {}
-            return data
-
-        except Exception as e:
-            _LOGGER.error("[UGREEN NAS] POST request to %s failed: %s", endpoint, e)
-            return {}
+    async def post(self, session, endpoint: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._request(session, "POST", endpoint, payload)
 
 
     #################################################### COUNT DYNAMIC  ########
 
 
     async def count_dynamic_entities(self, session: aiohttp.ClientSession) -> dict:
+        """Counts number of dynamic entites for central accessibility"""
         if self._dynamic_entity_counts is not None:
             return self._dynamic_entity_counts
         async with self._dynamic_entity_counts_lock:
@@ -704,9 +712,8 @@ class UgreenApiClient:
                 self._dynamic_entity_counts = {}
             return self._dynamic_entity_counts
 
-
     def get_dynamic_entity_counts(self) -> dict:
-        """Return counts of dynamic entities on request."""
+        """Return counted number of dynamic entities on request."""
         return self._dynamic_entity_counts or {}
 
 
@@ -981,7 +988,7 @@ class UgreenApiClient:
         _LOGGER.debug("[UGREEN NAS] Fetching UPS info from %s", endpoint)
         data = await self.get(session, endpoint)
 
-        # Exactly one UPS supported: take index 0
+        # Exactly one UPS is supported: take index 0
         entities: List[UgreenEntity] = []
         entities.extend([
             UgreenEntity(
@@ -1446,7 +1453,7 @@ class UgreenApiClient:
 
         return entities
 
-    #################################################### DYNAMIC STAUTS ########
+    #################################################### DYNAMIC STATUS ########
 
 
     async def get_dynamic_status_entities_fan(self) -> List[UgreenEntity]:
@@ -1615,7 +1622,7 @@ class UgreenApiClient:
                         key=f"{prefix}_read_rate",
                         name=f"Disk {idx} Read Rate",
                         icon="mdi:download",
-                        unit_of_measurement=None,  # skaliert (human readable)
+                        unit_of_measurement=None,
                     ),
                     endpoint="/ugreen/v1/taskmgr/stat/get_all",
                     path=f"calculated:scale_bytes_per_second:data.disk.series[{idx}].read_rate",
@@ -1639,7 +1646,7 @@ class UgreenApiClient:
                         key=f"{prefix}_write_rate",
                         name=f"Disk {idx} Write Rate",
                         icon="mdi:upload",
-                        unit_of_measurement=None,  # skaliert (human readable)
+                        unit_of_measurement=None,
                     ),
                     endpoint="/ugreen/v1/taskmgr/stat/get_all",
                     path=f"calculated:scale_bytes_per_second:data.disk.series[{idx}].write_rate",
@@ -1651,7 +1658,7 @@ class UgreenApiClient:
                         key=f"{prefix}_temperature",
                         name=f"Disk {idx} Temperature",
                         icon="mdi:thermometer",
-                        unit_of_measurement="°C",
+                        unit_of_measurement=UnitOfTemperature.CELSIUS,
                     ),
                     endpoint="/ugreen/v1/taskmgr/stat/get_all",
                     path=f"data.disk.series[{idx}].temperature",
@@ -1661,3 +1668,53 @@ class UgreenApiClient:
             ])
 
         return entities
+
+
+def UpdateWebSocket(api, session, *, lang: str = "de-DE"):
+    """Keep the API alive while no UGreen software (Web GUI or app) is connected."""
+    ws: aiohttp.ClientWebSocketResponse | None = None
+    subscribed = False
+
+    def _url() -> str:
+        ws_scheme = "wss" if api.scheme == "https" else "ws"
+        return (
+            f"{ws_scheme}://{api.host}:{api.port}/ugreen/v1/desktop/ws"
+            f"?client_id={uuid4()}-WEB&lang={lang}&token={api.token}"
+        )
+
+    async def _update() -> dict:
+        nonlocal ws, subscribed
+        if not api.token:
+            if ws and not ws.closed:
+                with contextlib.suppress(Exception):
+                    await ws.close()
+            ws, subscribed = None, False
+            return {"connected": False, "reason": "no_token"}
+
+        try:
+            if ws is None or ws.closed:
+                headers = {
+                    "Origin": f"{api.scheme}://{api.host}:{api.port}",
+                    "Pragma": "no-cache",
+                    "Cache-Control": "no-cache",
+                }
+                ws = await session.ws_connect(_url(), headers=headers, heartbeat=None)
+                subscribed = False
+
+            if not subscribed:
+                await ws.send_json({"op": "subscribe", "topics": ["cpu_temp"], "ts": int(time.time() * 1000)})
+                subscribed = True
+
+            with contextlib.suppress(Exception):
+                await ws.ping()
+
+            return {"connected": True}
+
+        except Exception as e:
+            if ws:
+                with contextlib.suppress(Exception):
+                    await ws.close()
+            ws, subscribed = None, False
+            return {"connected": False, "reason": str(e)}
+
+    return _update
