@@ -1,11 +1,10 @@
 import logging
-import aiohttp
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-
 from .device_info import build_device_info
 from .const import DOMAIN
 from .api import UgreenApiClient, UgreenEntity
@@ -31,10 +30,14 @@ async def async_setup_entry(
 
     async_add_entities(button_entities)
 
-class UgreenNasButton(CoordinatorEntity, ButtonEntity): # type: ignore
+class UgreenNasButton(CoordinatorEntity, ButtonEntity):
     """Representation of a UGREEN NAS button."""
 
-    def __init__(self, entry_id: str, coordinator: DataUpdateCoordinator, endpoint: UgreenEntity, api: UgreenApiClient, nas_model: 'str | None' = None) -> None:
+    def __init__(self, entry_id: str, coordinator: DataUpdateCoordinator,
+        endpoint: UgreenEntity,
+        api: UgreenApiClient,
+        nas_model: 'str | None' = None
+    )-> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
         self._endpoint = endpoint
@@ -48,21 +51,21 @@ class UgreenNasButton(CoordinatorEntity, ButtonEntity): # type: ignore
 
         self._attr_device_info = build_device_info(self._key, nas_model)
 
-    async def async_press(self) -> None: # type: ignore
+    async def async_press(self) -> None:
         """Perform the button action."""
         try:
-            async with aiohttp.ClientSession() as session:
-                await self._api.authenticate(session)
+            session = async_get_clientsession(self.hass)
+            await self._api.authenticate(session)
 
-                method = str(self._endpoint.request_method or "GET").upper()
-                path = self._endpoint.endpoint
-        
-                if method == "POST":
-                    await self._api.post(session, path)
-                elif method == "GET":
-                    await self._api.get(session, path)
-                else:
-                    _LOGGER.warning("Unsupported method: %s", method)
+            method = str(self._endpoint.request_method or "GET").upper()
+            path = self._endpoint.endpoint
+    
+            if method == "POST":
+                await self._api.post(session, path)
+            elif method == "GET":
+                await self._api.get(session, path)
+            else:
+                _LOGGER.warning("Unsupported method: %s", method)
 
         except Exception as e:
             _LOGGER.error("Error pressing button %s: %s", self._key, e)
