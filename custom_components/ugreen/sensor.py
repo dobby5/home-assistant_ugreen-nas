@@ -42,7 +42,7 @@ async def async_setup_entry(
 
     async_add_entities(config_sensors + status_sensors)
 
-class UgreenNasSensor(CoordinatorEntity, SensorEntity):  # type: ignore
+class UgreenNasSensor(CoordinatorEntity, SensorEntity):
     """Representation of a UGREEN NAS sensor."""
 
     def __init__(self, entry_id: str, coordinator: DataUpdateCoordinator, endpoint: UgreenEntity, nas_model: 'str | None' = None) -> None:
@@ -66,7 +66,7 @@ class UgreenNasSensor(CoordinatorEntity, SensorEntity):  # type: ignore
         self._attr_device_info = base_device_info
 
     @property
-    def native_value(self) -> StateType | date | datetime | Decimal:  # type: ignore
+    def native_value(self) -> StateType | date | datetime | Decimal:
         """Return the formatted value of the sensor."""
         raw = self.coordinator.data.get(self._key)
         return format_sensor_value(raw, self._endpoint)
@@ -82,14 +82,14 @@ class UgreenNasSensor(CoordinatorEntity, SensorEntity):  # type: ignore
         return base_attrs
 
     @property
-    def native_unit_of_measurement(self) -> str | None:  # type: ignore
+    def native_unit_of_measurement(self) -> str | None:
         """Return the unit, dynamically determined."""
         raw = self.coordinator.data.get(self._key)
         unit = self._endpoint.description.unit_of_measurement or ""
 
-        if self._endpoint.description.unit_of_measurement in ("B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"):
+        if self._endpoint.description.unit_of_measurement in ("B/s", "kB/s", "MB/s", "GB/s", "TB/s", "PB/s"):
             return determine_unit(raw, unit, True)
-        elif self._endpoint.description.unit_of_measurement in ("B", "KB", "MB", "GB", "TB", "PB"):
+        elif self._endpoint.description.unit_of_measurement in ("B", "kB", "MB", "GB", "TB", "PB"):
             return determine_unit(raw, unit, False)
 
         return self._endpoint.description.unit_of_measurement
