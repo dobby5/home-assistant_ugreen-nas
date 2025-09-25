@@ -1,8 +1,10 @@
+import logging
 from typing import Optional, Any, Union
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Optional
 from .api import UgreenEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 def format_dynamic_size(
     raw: Any,
@@ -11,16 +13,16 @@ def format_dynamic_size(
 ) -> Optional[Decimal]:
     """Format bytes into a human-readable format with configurable decimal places."""
     try:
-        if raw is None or input_unit not in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if raw is None or input_unit not in ("B", "kB", "MB", "GB", "TB", "PB"):
             return None
         
         size = Decimal(str(raw).replace(",", "."))
-        exponent_map = {'B': 0, 'KB': 1, 'MB': 2, 'GB': 3, 'TB': 4, 'PB': 5}
+        exponent_map = {'B': 0, 'kB': 1, 'MB': 2, 'GB': 3, 'TB': 4, 'PB': 5}
         exponent = exponent_map[input_unit]
 
         size_bytes = size * (Decimal(1024) ** exponent)
         
-        for _ in ['B', 'KB', 'MB', 'GB', 'TB', 'PB']:
+        for _ in ['B', 'kB', 'MB', 'GB', 'TB', 'PB']:
             if size_bytes < 1024:
                 quantize_str = f'1.{"0" * decimal_places}'
                 return size_bytes.quantize(Decimal(quantize_str), rounding=ROUND_HALF_UP)
@@ -39,13 +41,13 @@ def determine_unit(
 ) -> str:
     """Determine the appropriate unit for a given size in bytes."""
         
-    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    units = ['B', 'kB', 'MB', 'GB', 'TB', 'PB']
     
     if per_second:
         input_unit = input_unit.replace("/s", "") if input_unit.endswith("/s") else input_unit
 
     if input_unit not in units:
-        return "Unknown unit"
+        return None
 
     unit_index = units.index(input_unit)
 
@@ -81,8 +83,6 @@ def format_temperature(raw: Any) -> Decimal:
     if raw is None:
         return Decimal(0)
     try:
-        # return Decimal(str(round(float(raw), 1)))
-        # changed, temps are reported in full °C
         return int(round(float(raw)))
     except Exception:
         return Decimal(0)
@@ -137,13 +137,12 @@ def convert_string_to_number(value: Union[str, int, float, Decimal], decimal_pla
                 return round(Decimal(value), decimal_places)
             except Exception:
                 return str(value) 
-#    return str(value)
     return value
 
 def format_sensor_value(raw: Any, endpoint: UgreenEntity) -> Any:
     """Format a raw value based on the endpoint definition."""
     try:
-        if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement in ("B", "KB", "MB", "GB", "TB"):
+        if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement in ("B", "kB", "MB", "GB", "TB"):
             return format_dynamic_size(raw, endpoint.description.unit_of_measurement, endpoint.decimal_places)
 
         if isinstance(endpoint.description.name, str) and "Timestamp" in endpoint.description.name:
@@ -188,18 +187,13 @@ def format_sensor_value(raw: Any, endpoint: UgreenEntity) -> Any:
                 0: "Generic USB Device",   # 0 = External HDD?
             })
 
-        # if "status" in endpoint.description.key:
-        #     return format_status_code(raw, {
-        #         0: "Normal",
-        #     })
-
         if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement == "%":
             return format_percentage(raw)
 
         if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement == "°C":
             return format_temperature(raw)
 
-        if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement in ("KB/s", "MB/s", "GB/s"):
+        if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement in ("kB/s", "MB/s", "GB/s"):
             return format_dynamic_size(raw, endpoint.description.unit_of_measurement, endpoint.decimal_places)
 
         if endpoint.description.unit_of_measurement is not None and endpoint.description.unit_of_measurement == "MHz":
@@ -210,14 +204,11 @@ def format_sensor_value(raw: Any, endpoint: UgreenEntity) -> Any:
     except Exception:
         return Decimal(0)
 
-#########
 
 def scale_bytes_per_second(raw: Any) -> Optional[str]:
-    # Convert raw Bps value to a human-readable string like '316.45 MB/s'.
-    # Normally, transfer speeds are specified in bps / bits per second, e.g. 10Gbps.
-    # However, the UGOS API is actually reporting in *Bytes* per second.
-    # This has been tested/verified in Windows Explorer by copying huge files.
-    # Also, the UGOS web interface displays values in **BYTES** ("B", not "b") per second.
+    """Convert raw Bps value to a human-readable string like 316.45 MB/s."""
+    # Normally, transfer speeds are specified in bps (bits per second), e.g. 10Gbps.
+    # The UGOS API and Web interface are actually reporting in *Bytes* per second (GBps).
     try:
         if raw is None:
             return None
@@ -234,7 +225,7 @@ def scale_bytes_per_second(raw: Any) -> Optional[str]:
 
 
 def extract_value_from_path(data: dict, path: str) -> Any:
-    # Extract a value from nested dictionary/list structure using dot and index notation.
+    """Extract a value from nested dictionary/list structure using dot and index notation."""
     try:
         parts = path.split(".")
         value: Any = data
@@ -248,3 +239,35 @@ def extract_value_from_path(data: dict, path: str) -> Any:
         return value
     except Exception:
         return None
+
+
+async def get_entity_data_from_api(api, session, endpoint_to_entities) -> dict[str, Any]:
+    """Fetch data per endpoint and extract values for the given entities."""
+    data: dict[str, Any] = {}
+    for endpoint_str, entities in endpoint_to_entities.items():
+        try:
+            response = await api.get(session, endpoint_str)
+        except Exception as e:
+            _LOGGER.warning("[UGREEN NAS] Failed to fetch '%s': %s", endpoint_str, e)
+            for entity in entities:
+                data[entity.description.key] = None
+            continue
+        for entity in entities:
+            try:
+                path = getattr(entity, "path", None)
+                if isinstance(path, str) and not path.startswith("calculated:"):
+                    value = extract_value_from_path(response, path)
+                elif isinstance(path, str):  # 'virtual' endpoints handling
+                    if path.startswith("calculated:ram_total_size"):
+                        value = sum(v for k, v in data.items() if k.startswith("RAM") and k.endswith("_size"))
+                    elif path.startswith("calculated:scale_bytes_per_second:"):
+                        value = scale_bytes_per_second(
+                            extract_value_from_path(response, path.split(":", 2)[2])
+                        )
+                    else:
+                        value = None  # fallback for unknown 'calculated' identifiers
+                data[entity.description.key] = value
+            except Exception as e:
+                _LOGGER.warning("[UGREEN NAS] Failed to extract '%s': %s", entity.description.key, e)
+                data[entity.description.key] = None
+    return data
