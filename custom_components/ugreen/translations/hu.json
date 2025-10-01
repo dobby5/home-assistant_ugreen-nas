@@ -7,11 +7,9 @@
         "data": {
           "ugreen_host": "Gép",
           "ugreen_port": "Port",
-          "auth_port": "Jelsor port",
           "username": "Felhasználónév",
           "password": "Jelszó",
           "use_https": "HTTPS alkalmazása",
-          "verify_ssl": "SSL tanúsítvány ellenőrzése"
         }
       }
     },
@@ -28,11 +26,9 @@
         "data": {
           "ugreen_host": "Gép",
           "ugreen_port": "Port",
-          "auth_port": "Jelsor port",
           "username": "Felhasználónév",
           "password": "Jelszó",
           "use_https": "HTTPS alkalmazása",
-          "verify_ssl": "SSL tanúsítvány ellenőrzése"
         }
       }
     }
