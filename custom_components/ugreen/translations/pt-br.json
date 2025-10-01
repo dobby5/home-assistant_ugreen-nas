@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurar UGREEN NAS",
+        "description": "Digite seus detalhes da conexão com o UGREEN NAS.",
+        "data": {
+          "ugreen_host": "Endereço",
+          "ugreen_port": "Porta",
+          "username": "Usuário",
+          "password": "Senha",
+          "use_https": "Usar HTTPS"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Falha na conexão. Cheque o endereço e a porta.",
+      "invalid_auth": "Autenticação inválida.",
+      "unknown": "Ocorreu um erro desconhecido."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opções do UGREEN NAS",
+        "data": {
+          "ugreen_host": "Endereço",
+          "ugreen_port": "Porta",
+          "username": "Usuário",
+          "password": "Senha",
+          "use_https": "Usar HTTPS"
+        }
+      }
+    }
+  }
+}
