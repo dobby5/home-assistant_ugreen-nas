@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from .device_info import build_device_info
 from .const import DOMAIN
-from .api import UgreenEntity
+from .entities import UgreenEntity
 from .utils import determine_unit, format_sensor_value
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,8 +24,8 @@ async def async_setup_entry(
     """Set up UGREEN NAS sensors based on a config entry."""
     config_coordinator = hass.data[DOMAIN][entry.entry_id]["config_coordinator"]
     config_entities = hass.data[DOMAIN][entry.entry_id]["config_entities"]
-    status_coordinator = hass.data[DOMAIN][entry.entry_id]["status_coordinator"]
-    status_entities = hass.data[DOMAIN][entry.entry_id]["status_entities"]
+    state_coordinator = hass.data[DOMAIN][entry.entry_id]["state_coordinator"]
+    state_entities = hass.data[DOMAIN][entry.entry_id]["state_entities"]
     nas_model = hass.data[DOMAIN][entry.entry_id].get("nas_model")
 
     # Configuration sensors (60s)
@@ -34,13 +34,13 @@ async def async_setup_entry(
         for entity in config_entities
     ]
 
-    # Status sensors (5s)
-    status_sensors = [
-        UgreenNasSensor(entry.entry_id, status_coordinator, entity, nas_model)
-        for entity in status_entities
+    # State sensors (5s)
+    state_sensors = [
+        UgreenNasSensor(entry.entry_id, state_coordinator, entity, nas_model)
+        for entity in state_entities
     ]
 
-    async_add_entities(config_sensors + status_sensors)
+    async_add_entities(config_sensors + state_sensors)
 
 class UgreenNasSensor(CoordinatorEntity, SensorEntity):
     """Representation of a UGREEN NAS sensor."""
