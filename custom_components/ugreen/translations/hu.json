@@ -9,7 +9,7 @@
           "ugreen_port": "Port",
           "username": "Felhasználónév",
           "password": "Jelszó",
-          "use_https": "HTTPS alkalmazása",
+          "use_https": "HTTPS alkalmazása"
         }
       }
     },
@@ -28,7 +28,7 @@
           "ugreen_port": "Port",
           "username": "Felhasználónév",
           "password": "Jelszó",
-          "use_https": "HTTPS alkalmazása",
+          "use_https": "HTTPS alkalmazása"
         }
       }
     }
