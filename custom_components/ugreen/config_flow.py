@@ -15,9 +15,11 @@ from .api import UgreenApiClient
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class UgreenNasConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for UGREEN NAS."""
     VERSION = 1
+
 
     async def async_step_user(
         self,
