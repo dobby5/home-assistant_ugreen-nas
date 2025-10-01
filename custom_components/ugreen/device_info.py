@@ -1,9 +1,11 @@
 from homeassistant.helpers.device_registry import DeviceInfo
 from .const import DOMAIN
 
+
 def build_device_info(key: str, model: str | None = None) -> DeviceInfo:
     """Build DeviceInfo based on the sensor or button key."""
-        
+
+
     if key.startswith("disk") and "_pool" in key:
         parts = key.split('_')
         disk_index = parts[0][4:] 
@@ -14,6 +16,7 @@ def build_device_info(key: str, model: str | None = None) -> DeviceInfo:
             manufacturer="UGREEN",
             via_device=(DOMAIN, "ugreen_nas"),
         )
+
 
     if key.startswith("volume") and "_pool" in key:
         parts = key.split('_')
@@ -27,6 +30,7 @@ def build_device_info(key: str, model: str | None = None) -> DeviceInfo:
             via_device=(DOMAIN, "ugreen_nas"),
         )
 
+
     if key.startswith("pool"):
         pool_index = key.split('_')[0][4:] 
         return DeviceInfo(
@@ -36,6 +40,7 @@ def build_device_info(key: str, model: str | None = None) -> DeviceInfo:
             model=model,
             via_device=(DOMAIN, "ugreen_nas"),
         )
+
 
     return DeviceInfo(
         identifiers={(DOMAIN, "ugreen_nas")},
