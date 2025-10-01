@@ -12,9 +12,12 @@ from homeassistant.helpers.device_registry import async_get as async_get_device_
 
 from .const import DOMAIN, PLATFORMS
 from .utils import get_entity_data_from_api
-from .api import (
-    UgreenApiClient, UpdateWebSocket,
-    STATIC_CONFIG_ENTITIES, STATIC_STATUS_ENTITIES, STATIC_BUTTON_ENTITIES
+
+from .api import UgreenApiClient
+from .entities import (
+    ALL_NAS_COMMON_CONFIG_ENTITIES,
+    ALL_NAS_COMMON_STATE_ENTITIES,
+    ALL_NAS_COMMON_BUTTON_ENTITIES
 )
 
 
@@ -23,6 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Setup and start the integration."""
+
 
     ### Preparations
     _LOGGER.debug("[UGREEN NAS] Setting up config entry: %s", entry.entry_id)
@@ -37,7 +41,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=_cfg(entry, "password"),
         use_https=bool(_cfg(entry, "use_https", False)),
     )
-    keepalive_websocket = UpdateWebSocket(api, session, lang="de-DE")
+    keepalive_websocket = api.ws_keepalive(session, lang="de-DE")
 
 
     ### Initial authentication
@@ -51,21 +55,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("[UGREEN NAS] Entity counts done: %s", dynamic_entity_counts)
 
 
-    ### Configuration entities (changing less frequently)
-    # The entities
-    config_entities  = list(STATIC_CONFIG_ENTITIES)
-    config_entities += await api.get_dynamic_config_entities_storage(session) or []
-    config_entities += await api.get_dynamic_config_entities_mem(session) or []
-    config_entities += await api.get_dynamic_config_entities_lan(session) or []
-    config_entities += await api.get_dynamic_config_entities_usb(session) or []
-    config_entities += await api.get_dynamic_config_entities_ups(session) or []
+    ### Setup configuration entities (never or slowly changing, 60s polling)
+    #   Build the entity list
+    config_entities =  list(ALL_NAS_COMMON_CONFIG_ENTITIES)
+    config_entities += await api.DISCOVER_NAS_SPECIFIC_CONFIG_ENTITIES(session)
+    #   Group entities by endpoint to reduce number of API calls
     config_entities_grouped_by_endpoint = defaultdict(list)
-
-    # Group entities by endpoint to reduce number of API calls
     for entity in config_entities:
         config_entities_grouped_by_endpoint[entity.endpoint].append(entity)
-
-    # The configuration entites update function
+    #   Create the update funktion for the corresponding coordinator
     async def update_configuration_data() -> dict[str, Any]:
         try:
             _LOGGER.debug("[UGREEN NAS] Updating configuration data...")
@@ -73,9 +71,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return await get_entity_data_from_api(api, session, endpoint_to_entities)
         except Exception as err:
             raise UpdateFailed(f"[UGREEN NAS] Configuration entities update error: {err}") from err
-
-    # Make a coordinator to frequently update data every 60 seconds using update function
-    config_coordinator = DataUpdateCoordinator(
+    #   Create the coordinator
+    config_coordinator = DataUpdateCoordinator( # data polling every 60s
         hass,
         _LOGGER,
         name="ugreen_configuration",
@@ -84,40 +81,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
 
-    ### Status entities (changing rather quickly)
-    # The entities
-    status_entities  = list(STATIC_STATUS_ENTITIES)
-    status_entities += await api.get_dynamic_status_entities_storage() or []
-    status_entities += await api.get_dynamic_status_entities_lan() or []
-    status_entities += await api.get_dynamic_status_entities_fan() or []
-    status_entities_grouped_by_endpoint = defaultdict(list)
-
-    # Group entities by endpoint to reduce number of API calls
-    for entity in status_entities:
-        status_entities_grouped_by_endpoint[entity.endpoint].append(entity)
-    _LOGGER.debug("[UGREEN NAS] List of status entities prepared.")
-
-    # The status entities update function
-    async def update_status_data() -> dict[str, Any]:
+    ### Setup state entities (changing rather quickly, 5s polling)
+    #   Build the entity list
+    state_entities =  list(ALL_NAS_COMMON_STATE_ENTITIES)
+    state_entities += await api.DISCOVER_NAS_SPECIFIC_STATE_ENTITIES(session)
+    #   Group entities by endpoint to reduce number of API calls
+    state_entities_grouped_by_endpoint = defaultdict(list)
+    for entity in state_entities: # reduce number of API calls
+        state_entities_grouped_by_endpoint[entity.endpoint].append(entity)
+    _LOGGER.debug("[UGREEN NAS] List of state entities prepared.")
+    #   Create the update funktion for the corresponding coordinator
+    async def update_state_data() -> dict[str, Any]: # update for coordinator
         try:
-            _LOGGER.debug("[UGREEN NAS] Updating status data...")
-            endpoint_to_entities = hass.data[DOMAIN][entry.entry_id]["status_entities_grouped_by_endpoint"]
+            _LOGGER.debug("[UGREEN NAS] Updating state data...")
+            endpoint_to_entities = hass.data[DOMAIN][entry.entry_id]["state_entities_grouped_by_endpoint"]
             return await get_entity_data_from_api(api, session, endpoint_to_entities)
         except Exception as err:
-            raise UpdateFailed(f"[UGREEN NAS] Status entities update error: {err}") from err
-
-    # Make a coordinator to frequently update data every 5 seconds using update function
-    status_coordinator = DataUpdateCoordinator(
+            raise UpdateFailed(f"[UGREEN NAS] State entities update error: {err}") from err
+    #   Create the coordinator
+    state_coordinator = DataUpdateCoordinator( # data polling every 5s
         hass,
         _LOGGER,
-        name="ugreen_status",
-        update_method=update_status_data,
-        update_interval=timedelta(seconds=entry.options.get("status_interval", 5)),
+        name="ugreen_state",
+        update_method=update_state_data,
+        update_interval=timedelta(seconds=entry.options.get("state_interval", 5)),
     )
 
 
-    ### Create a dedicated web socket coordinator to keep API alive (refreshed every 25s)
-    ws_coordinator = DataUpdateCoordinator(
+    ### Create the websocket coordinator to keep API alive if no UGreen App / Web GUI is active
+    ws_coordinator = DataUpdateCoordinator( # data polling every 25s
         hass,
         _LOGGER,
         name="ugreen_ws",
@@ -131,11 +123,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "config_coordinator": config_coordinator,
         "config_entities": config_entities,
         "config_entities_grouped_by_endpoint": config_entities_grouped_by_endpoint,
-        "status_coordinator": status_coordinator,
-        "status_entities": status_entities,
-        "status_entities_grouped_by_endpoint": status_entities_grouped_by_endpoint,
+        "state_coordinator": state_coordinator,
+        "state_entities": state_entities,
+        "state_entities_grouped_by_endpoint": state_entities_grouped_by_endpoint,
         "ws_coordinator": ws_coordinator,
-        "button_entities": STATIC_BUTTON_ENTITIES,
+        "button_entities": ALL_NAS_COMMON_BUTTON_ENTITIES,
         "dynamic_entity_counts": dynamic_entity_counts,
         "api": api,
     }
@@ -143,7 +135,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     ### Initial entities refresh
     await config_coordinator.async_config_entry_first_refresh()
-    await status_coordinator.async_config_entry_first_refresh()
+    await state_coordinator.async_config_entry_first_refresh()
     await ws_coordinator.async_config_entry_first_refresh()
 
 
@@ -184,7 +176,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning("[UGREEN NAS] Device registration failed: %s", e)
 
     
-    ### Finalize it - forward the config entry setup to all defined platforms
+    ### Finalize it - forward the setups to platforms
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _LOGGER.debug("[UGREEN NAS] Forwarded entry setups to platforms - setup complete.")
 
@@ -197,7 +189,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
 
     ### Stop update intervals to prevent any further background work
-    for key in ("ws_coordinator", "status_coordinator", "config_coordinator"):
+    for key in ("ws_coordinator", "state_coordinator", "config_coordinator"):
         coord = data.get(key)
         if coord:
             coord.async_set_update_interval(None)
