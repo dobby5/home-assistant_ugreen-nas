@@ -1,10 +1,13 @@
 import logging
-from typing import Optional, Any, Union
+from typing import Any, Optional, Union, Iterable, List, Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from .api import UgreenEntity
+from .entities import UgreenEntity
+from homeassistant.helpers.entity import EntityDescription
+
 
 _LOGGER = logging.getLogger(__name__)
+
 
 def format_dynamic_size(
     raw: Any,
@@ -38,7 +41,7 @@ def determine_unit(
     raw: Any,
     input_unit: str = 'B',
     per_second: bool = False
-) -> str:
+) -> Optional[str]:
     """Determine the appropriate unit for a given size in bytes."""
         
     units = ['B', 'kB', 'MB', 'GB', 'TB', 'PB']
@@ -78,7 +81,7 @@ def format_duration(seconds: float) -> str:
     except Exception:
         return str(seconds)
 
-def format_temperature(raw: Any) -> Decimal:
+def format_temperature(raw: Any) -> Union[int, Decimal]:
     """Format a raw temperature value to a Decimal representation."""
     if raw is None:
         return Decimal(0)
@@ -182,7 +185,7 @@ def format_sensor_value(raw: Any, endpoint: UgreenEntity) -> Any:
                 0: "Normal",
             })
             
-        if "usb_device_type" in endpoint.description.key:
+        if "USB_device_type" in endpoint.description.key:
             return format_status_code(raw, {
                 0: "Generic USB Device",   # 0 = External HDD?
             })
@@ -271,3 +274,72 @@ async def get_entity_data_from_api(api, session, endpoint_to_entities) -> dict[s
                 _LOGGER.warning("[UGREEN NAS] Failed to extract '%s': %s", entity.description.key, e)
                 data[entity.description.key] = None
     return data
+
+
+def apply_templates(templates: Iterable[UgreenEntity], **fmt: Any) -> List[UgreenEntity]:
+    """Create UgreenEntity objects by filling placeholders in templates.
+    Supported placeholders: {prefix_key}, {prefix_name}, {i}, {endpoint}, {category}, {series_index}"""
+    out: List[UgreenEntity] = []
+    for t in templates:
+        desc = EntityDescription(
+            key=t.description.key.format(**fmt),
+            name=t.description.name.format(**fmt) if isinstance(t.description.name, str) else t.description.name,
+            icon=t.description.icon,
+            unit_of_measurement=t.description.unit_of_measurement,
+        )
+        out.append(UgreenEntity(
+            description=desc,
+            endpoint=t.endpoint.format(**fmt),
+            path=t.path.format(**fmt),
+            request_method=t.request_method,
+            decimal_places=t.decimal_places,
+            nas_part_category=(t.nas_part_category or "").format(**fmt) if isinstance(t.nas_part_category, str) else t.nas_part_category,
+        ))
+    return out
+
+
+async def make_entities(
+    fetch: Optional[Callable[[str], Awaitable[dict]]],
+    *,
+    templates: Iterable[UgreenEntity],
+    endpoint: str,
+    prefix_key_base: str,
+    prefix_name_base: str,
+    category: str,
+    list_path: Optional[str] = None,
+    count: Optional[int] = None,
+    index_start: int = 1,
+    single_compact: bool = True,
+) -> List[UgreenEntity]:
+    """Build dynamic entities either from an API list or a given count."""
+    if list_path:
+        if fetch is None:
+            return []
+        data = await fetch(endpoint)
+        items = extract_value_from_path(data or {}, list_path) or []
+        n = len(items)
+    else:
+        n = max(0, int(count or 0))
+
+    if n == 0:
+        return []
+
+    single = (n == 1) and single_compact
+    out: List[UgreenEntity] = []
+
+    for i in range(n):
+        idx_num = i + index_start
+        idx_txt = "" if single else f"{idx_num}"
+        prefix_key  = f"{prefix_key_base}{idx_txt}"
+        prefix_name = f"{prefix_name_base}{'' if single else f' {idx_num}'}"
+
+        out.extend(apply_templates(
+            templates,
+            i=i,
+            series_index=idx_num,
+            prefix_key=prefix_key,
+            prefix_name=prefix_name,
+            endpoint=endpoint,
+            category=category,
+        ))
+    return out
