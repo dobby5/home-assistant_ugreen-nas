@@ -7,9 +7,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from .device_info import build_device_info
 from .const import DOMAIN
-from .api import UgreenApiClient, UgreenEntity
+from .api import UgreenApiClient
+from .entities import UgreenEntity
 
 _LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -29,6 +31,7 @@ async def async_setup_entry(
     ]
 
     async_add_entities(button_entities)
+
 
 class UgreenNasButton(CoordinatorEntity, ButtonEntity):
     """Representation of a UGREEN NAS button."""
