@@ -1,0 +1,40 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "UGREEN NAS beállítása",
+        "description": "Adja meg az UGREEN NAS kapcsolati adatait.",
+        "data": {
+          "ugreen_host": "Gép",
+          "ugreen_port": "Port",
+          "auth_port": "Jelsor port",
+          "username": "Felhasználónév",
+          "password": "Jelszó",
+          "use_https": "HTTPS alkalmazása",
+          "verify_ssl": "SSL tanúsítvány ellenőrzése"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nem lehet csatlakozni. Ellenőrizze a gazdagépet és a portokat.",
+      "invalid_auth": "Érvénytelen hitelesítés.",
+      "unknown": "Ismeretlen hiba történt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "UGREEN NAS beállítások",
+        "data": {
+          "ugreen_host": "Gép",
+          "ugreen_port": "Port",
+          "auth_port": "Jelsor port",
+          "username": "Felhasználónév",
+          "password": "Jelszó",
+          "use_https": "HTTPS alkalmazása",
+          "verify_ssl": "SSL tanúsítvány ellenőrzése"
+        }
+      }
+    }
+  }
+}
