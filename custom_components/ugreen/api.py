@@ -1,4 +1,4 @@
-import logging, asyncio, base64, time, contextlib, aiohttp, async_timeout
+import logging, asyncio, base64, time, contextlib, aiohttp, async_timeout, ssl
 
 from typing import List, Any
 from uuid import uuid4
@@ -71,6 +71,9 @@ class UgreenApiClient:
         self._dynamic_entity_counts: dict[str, Any] | None = None
         self._dynamic_entity_counts_lock = asyncio.Lock()
 
+        # Disable SSL certificate checking
+        self._ssl = (False if self.scheme == "https" else None)
+
 
     ### "The API" - public entrypoints (e.g. used by __init__.py)
 
@@ -130,7 +133,7 @@ class UgreenApiClient:
                 payload_pk = {"username": self.username}
                 _LOGGER.debug("[UGREEN] login: fetch public key")
                 async with async_timeout.timeout(10):
-                    async with session.post(url_pk, json=payload_pk) as resp:
+                    async with session.post(url_pk, json=payload_pk, ssl=self._ssl) as resp:
                         resp.raise_for_status()
                         hdr = resp.headers.get("x-rsa-token", "")
                 if not hdr:
@@ -158,7 +161,7 @@ class UgreenApiClient:
                 }
                 _LOGGER.debug("[UGREEN] login POST (otp=%s)", self.otp)
                 async with async_timeout.timeout(10):
-                    async with session.post(url_login, json=payload) as resp:
+                    async with session.post(url_login, json=payload, ssl=self._ssl) as resp:
                         resp.raise_for_status()
                         data = await resp.json()
 
@@ -191,7 +194,7 @@ class UgreenApiClient:
             url = f"{url}{'&' if '?' in url else '?'}token={self.token}"
             _LOGGER.debug("[UGREEN] %s %s payload=%s", method, url, payload if method == "POST" else None)
             async with async_timeout.timeout(10):
-                async with session.request(method, url, json=payload if method == "POST" else None) as resp:
+                async with session.request(method, url, json=payload if method == "POST" else None, ssl=self._ssl) as resp:
                     resp.raise_for_status()
                     return await resp.json()
 
@@ -305,7 +308,7 @@ class UgreenApiClient:
                         "Pragma": "no-cache",
                         "Cache-Control": "no-cache",
                     }
-                    ws = await session.ws_connect(_url(), headers=headers, heartbeat=None)
+                    ws = await session.ws_connect(_url(), headers=headers, heartbeat=None, ssl=self._ssl)
                     subscribed = False
 
                 if not subscribed:

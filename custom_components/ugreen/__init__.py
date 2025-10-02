@@ -192,7 +192,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for key in ("ws_coordinator", "state_coordinator", "config_coordinator"):
         coord = data.get(key)
         if coord:
-            coord.async_set_update_interval(None)
+            coord.update_interval = None
 
     ### Unload platforms / entities and clean up data container
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
