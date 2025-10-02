@@ -128,21 +128,12 @@ class UgreenApiClient:
         """Fetch RSA pubkey from header, encrypt password, request token"""
         async with self._login_lock:
             try:
-                # Common web-like headers to satisfy certain UGOS builds
-                headers_web = {
-                    "Origin": f"{self.scheme}://{self.host}:{self.port}",
-                    "Referer": f"{self.scheme}://{self.host}:{self.port}/",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) HomeAssistant-Ugreen/1.0",
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                }
-
                 # 1) public key
                 url_pk = f"{self.base_url}/ugreen/v1/verify/check?token="
                 payload_pk = {"username": self.username}
                 _LOGGER.debug("[UGREEN] login: fetch public key")
                 async with async_timeout.timeout(10):
-                    async with session.post(url_pk, json=payload_pk, headers=headers_web, ssl=self._ssl) as resp:
+                    async with session.post(url_pk, json=payload_pk, ssl=self._ssl) as resp:
                         resp.raise_for_status()
                         hdr = resp.headers.get("x-rsa-token", "")
                 if not hdr:
@@ -170,20 +161,9 @@ class UgreenApiClient:
                 }
                 _LOGGER.debug("[UGREEN] login POST (otp=%s)", self.otp)
                 async with async_timeout.timeout(10):
-                    async with session.post(url_login, json=payload, headers=headers_web, ssl=self._ssl) as resp:
+                    async with session.post(url_login, json=payload, ssl=self._ssl) as resp:
                         resp.raise_for_status()
                         data = await resp.json()
-
-                # Retry once for firmware that requires explicit client fields
-                if data.get("code") == 9406:
-                    payload_retry = dict(payload)
-                    payload_retry.setdefault("client_type", "WEB")
-                    payload_retry.setdefault("client_id", f"{uuid4()}-WEB")
-                    _LOGGER.debug("[UGREEN] login retry due to code=9406 (adding client_type/client_id)")
-                    async with async_timeout.timeout(10):
-                        async with session.post(url_login, json=payload_retry, headers=headers_web, ssl=self._ssl) as resp:
-                            resp.raise_for_status()
-                            data = await resp.json()
 
                 if data.get("code") != 200:
                     msg = data.get("msg") or data.get("debug") or ""
