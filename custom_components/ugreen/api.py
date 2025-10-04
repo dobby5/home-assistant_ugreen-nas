@@ -330,7 +330,7 @@ class UgreenApiClient:
         return _update
 
 
-    def _config_definitions(self) -> list[dict]:
+    def _config_definitions(self) -> list[dict[str, Any]]:
         """Registry for dynamic CONFIG entities."""
         return [
             # List-driven sections (fetch + list_path)
@@ -397,7 +397,7 @@ class UgreenApiClient:
         ]
 
 
-    def _status_definitions(self) -> list[dict]:
+    def _status_definitions(self) -> list[dict[str, Any]]:
         """Registry for dynamic STATUS entities."""
         return [
             dict(

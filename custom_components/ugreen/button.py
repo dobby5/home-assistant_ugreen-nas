@@ -24,9 +24,10 @@ async def async_setup_entry(
     api = hass.data[DOMAIN][entry.entry_id]["api"]
 
     nas_model = hass.data[DOMAIN][entry.entry_id].get("nas_model")
+    nas_name = hass.data[DOMAIN][entry.entry_id].get("nas_name")
 
     button_entities = [
-        UgreenNasButton(entry.entry_id, coordinator, entity, api, nas_model)
+        UgreenNasButton(entry.entry_id, coordinator, entity, api, nas_model, nas_name)
         for entity in entities
     ]
 
@@ -39,7 +40,8 @@ class UgreenNasButton(CoordinatorEntity, ButtonEntity):
     def __init__(self, entry_id: str, coordinator: DataUpdateCoordinator,
         endpoint: UgreenEntity,
         api: UgreenApiClient,
-        nas_model: 'str | None' = None
+        nas_model: 'str | None' = None,
+        nas_name: 'str | None' = None
     )-> None:
         super().__init__(coordinator)
         self._entry_id = entry_id
@@ -47,12 +49,13 @@ class UgreenNasButton(CoordinatorEntity, ButtonEntity):
         self._key = endpoint.description.key
         self._api = api
 
-        self._attr_name = f"UGREEN NAS {endpoint.description.name}"
+        device_name = nas_name or "UGREEN NAS"
+        self._attr_name = f"{device_name} {endpoint.description.name}"
         self._attr_unique_id = f"{entry_id}_{endpoint.description.key}"
         self._attr_icon = endpoint.description.icon
         self._attr_native_unit_of_measurement = endpoint.description.unit_of_measurement
 
-        self._attr_device_info = build_device_info(self._key, nas_model)
+        self._attr_device_info = build_device_info(self._key, nas_model, nas_name)
 
     async def async_press(self) -> None:
         """Perform the button action."""

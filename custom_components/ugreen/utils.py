@@ -1,13 +1,11 @@
 import logging
-from typing import Any, Optional, Union, Iterable, List, Awaitable, Callable
+from typing import Any, Optional, Union, Iterable, List, Awaitable, Callable, Mapping
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from .entities import UgreenEntity
 from homeassistant.helpers.entity import EntityDescription
 
-
 _LOGGER = logging.getLogger(__name__)
-
 
 def format_dynamic_size(
     raw: Any,
@@ -227,7 +225,7 @@ def scale_bytes_per_second(raw: Any) -> Optional[str]:
         return None
 
 
-def extract_value_from_path(data: dict, path: str) -> Any:
+def extract_value_from_path(data: dict[str, Any], path: str) -> Any:
     """Extract a value from nested dictionary/list structure using dot and index notation."""
     try:
         parts = path.split(".")
@@ -243,8 +241,11 @@ def extract_value_from_path(data: dict, path: str) -> Any:
     except Exception:
         return None
 
-
-async def get_entity_data_from_api(api, session, endpoint_to_entities) -> dict[str, Any]:
+async def get_entity_data_from_api(
+    api: Any,
+    session: Any,
+    endpoint_to_entities: Mapping[str, Iterable[UgreenEntity]]
+) -> dict[str, Any]:
     """Fetch data per endpoint and extract values for the given entities."""
     data: dict[str, Any] = {}
     for endpoint_str, entities in endpoint_to_entities.items():
@@ -257,6 +258,7 @@ async def get_entity_data_from_api(api, session, endpoint_to_entities) -> dict[s
             continue
         for entity in entities:
             try:
+                value = None  # Ensure value is always defined
                 path = getattr(entity, "path", None)
                 if isinstance(path, str) and not path.startswith("calculated:"):
                     value = extract_value_from_path(response, path)
@@ -299,7 +301,7 @@ def apply_templates(templates: Iterable[UgreenEntity], **fmt: Any) -> List[Ugree
 
 
 async def make_entities(
-    fetch: Optional[Callable[[str], Awaitable[dict]]],
+    fetch: Optional[Callable[[str], Awaitable[dict[str, Any]]]],
     *,
     templates: Iterable[UgreenEntity],
     endpoint: str,
