@@ -23,7 +23,6 @@
 
 👉 [**Click here**](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/wiki/03-%E2%80%90-Installation) for the step-by-step installation guide on the project Wiki.
 > ⏱️ Total setup time: *~10 minutes*
-
 ---
 
 ## 📝 Notes & Feedback
@@ -39,3 +38,7 @@
 ---
 
 *Thanks for using this integration and your feedback! 😊*
+
+
+
+[![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FTom-Bom-badil%2Fhome-assistant_ugreen-nas)
